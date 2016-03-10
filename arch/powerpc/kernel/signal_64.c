@@ -214,7 +214,6 @@ static long setup_tm_sigcontexts(struct sigcontext __user *sc,
 	 */
 	regs->msr &= ~MSR_TS_MASK;
 
-	flush_fp_to_thread(current);
 
 #ifdef CONFIG_ALTIVEC
 	err |= __put_user(v_regs, &sc->v_regs);
@@ -222,20 +221,19 @@ static long setup_tm_sigcontexts(struct sigcontext __user *sc,
 
 	/* save altivec registers */
 	if (current->thread.used_vr) {
-		flush_altivec_to_thread(current);
 		/* Copy 33 vec registers (vr0..31 and vscr) to the stack */
-		err |= __copy_to_user(v_regs, &current->thread.vr_state,
+		err |= __copy_to_user(v_regs, &current->thread.transact_vr,
 				      33 * sizeof(vector128));
 		/* If VEC was enabled there are transactional VRs valid too,
 		 * else they're a copy of the checkpointed VRs.
 		 */
 		if (msr & MSR_VEC)
 			err |= __copy_to_user(tm_v_regs,
-					      &current->thread.transact_vr,
+					      &current->thread.vr_state,
 					      33 * sizeof(vector128));
 		else
 			err |= __copy_to_user(tm_v_regs,
-					      &current->thread.vr_state,
+					      &current->thread.transact_vr,
 					      33 * sizeof(vector128));
 
 		/* set MSR_VEC in the MSR value in the frame to indicate
@@ -247,13 +245,13 @@ static long setup_tm_sigcontexts(struct sigcontext __user *sc,
 	 * use altivec.
 	 */
 	if (cpu_has_feature(CPU_FTR_ALTIVEC))
-		current->thread.vrsave = mfspr(SPRN_VRSAVE);
-	err |= __put_user(current->thread.vrsave, (u32 __user *)&v_regs[33]);
+		current->thread.transact_vrsave = mfspr(SPRN_VRSAVE);
+	err |= __put_user(current->thread.transact_vrsave, (u32 __user *)&v_regs[33]);
 	if (msr & MSR_VEC)
-		err |= __put_user(current->thread.transact_vrsave,
+		err |= __put_user(current->thread.vrsave,
 				  (u32 __user *)&tm_v_regs[33]);
 	else
-		err |= __put_user(current->thread.vrsave,
+		err |= __put_user(current->thread.transact_vrsave,
 				  (u32 __user *)&tm_v_regs[33]);
 
 #else /* CONFIG_ALTIVEC */
@@ -262,11 +260,11 @@ static long setup_tm_sigcontexts(struct sigcontext __user *sc,
 #endif /* CONFIG_ALTIVEC */
 
 	/* copy fpr regs and fpscr */
-	err |= copy_fpr_to_user(&sc->fp_regs, current);
+	err |= copy_transact_fpr_to_user(&sc->fp_regs, current);
 	if (msr & MSR_FP)
-		err |= copy_transact_fpr_to_user(&tm_sc->fp_regs, current);
-	else
 		err |= copy_fpr_to_user(&tm_sc->fp_regs, current);
+	else
+		err |= copy_transact_fpr_to_user(&tm_sc->fp_regs, current);
 
 #ifdef CONFIG_VSX
 	/*
@@ -275,16 +273,15 @@ static long setup_tm_sigcontexts(struct sigcontext __user *sc,
 	 * VMX data.
 	 */
 	if (current->thread.used_vsr) {
-		flush_vsx_to_thread(current);
 		v_regs += ELF_NVRREG;
 		tm_v_regs += ELF_NVRREG;
 
-		err |= copy_vsx_to_user(v_regs, current);
+		err |= copy_transact_vsx_to_user(v_regs, current);
 
 		if (msr & MSR_VSX)
-			err |= copy_transact_vsx_to_user(tm_v_regs, current);
-		else
 			err |= copy_vsx_to_user(tm_v_regs, current);
+		else
+			err |= copy_transact_vsx_to_user(tm_v_regs, current);
 
 		/* set MSR_VSX in the MSR value in the frame to
 		 * indicate that sc->vs_reg) contains valid data.
@@ -483,9 +480,9 @@ static long restore_tm_sigcontexts(struct pt_regs *regs,
 		return -EFAULT;
 	/* Copy 33 vec registers (vr0..31 and vscr) from the stack */
 	if (v_regs != NULL && tm_v_regs != NULL && (msr & MSR_VEC) != 0) {
-		err |= __copy_from_user(&current->thread.vr_state, v_regs,
+		err |= __copy_from_user(&current->thread.transact_vr, v_regs,
 					33 * sizeof(vector128));
-		err |= __copy_from_user(&current->thread.transact_vr, tm_v_regs,
+		err |= __copy_from_user(&current->thread.vr_state, tm_v_regs,
 					33 * sizeof(vector128));
 	}
 	else if (current->thread.used_vr) {
@@ -494,9 +491,9 @@ static long restore_tm_sigcontexts(struct pt_regs *regs,
 	}
 	/* Always get VRSAVE back */
 	if (v_regs != NULL && tm_v_regs != NULL) {
-		err |= __get_user(current->thread.vrsave,
-				  (u32 __user *)&v_regs[33]);
 		err |= __get_user(current->thread.transact_vrsave,
+				  (u32 __user *)&v_regs[33]);
+		err |= __get_user(current->thread.vrsave,
 				  (u32 __user *)&tm_v_regs[33]);
 	}
 	else {
@@ -507,8 +504,8 @@ static long restore_tm_sigcontexts(struct pt_regs *regs,
 		mtspr(SPRN_VRSAVE, current->thread.vrsave);
 #endif /* CONFIG_ALTIVEC */
 	/* restore floating point */
-	err |= copy_fpr_from_user(current, &sc->fp_regs);
-	err |= copy_transact_fpr_from_user(current, &tm_sc->fp_regs);
+	err |= copy_fpr_from_user(current, &tm_sc->fp_regs);
+	err |= copy_transact_fpr_from_user(current, &sc->fp_regs);
 #ifdef CONFIG_VSX
 	/*
 	 * Get additional VSX data. Update v_regs to point after the
@@ -518,8 +515,8 @@ static long restore_tm_sigcontexts(struct pt_regs *regs,
 	if (v_regs && ((msr & MSR_VSX) != 0)) {
 		v_regs += ELF_NVRREG;
 		tm_v_regs += ELF_NVRREG;
-		err |= copy_vsx_from_user(current, v_regs);
-		err |= copy_transact_vsx_from_user(current, tm_v_regs);
+		err |= copy_vsx_from_user(current, tm_v_regs);
+		err |= copy_transact_vsx_from_user(current, v_regs);
 	} else {
 		for (i = 0; i < 32 ; i++) {
 			current->thread.fp_state.fpr[i][TS_VSRLOWOFFSET] = 0;
@@ -533,17 +530,15 @@ static long restore_tm_sigcontexts(struct pt_regs *regs,
 	/* This loads the checkpointed FP/VEC state, if used */
 	tm_recheckpoint(&current->thread, msr);
 
-	/* This loads the speculative FP/VEC state, if used */
+	msr_check_and_set(msr & (MSR_FP | MSR_VEC));
 	if (msr & MSR_FP) {
-		do_load_up_transact_fpu(&current->thread);
+		load_fp_state(&current->thread.fp_state);
 		regs->msr |= (MSR_FP | current->thread.fpexc_mode);
 	}
-#ifdef CONFIG_ALTIVEC
 	if (msr & MSR_VEC) {
-		do_load_up_transact_altivec(&current->thread);
+		load_vr_state(&current->thread.vr_state);
 		regs->msr |= MSR_VEC;
 	}
-#endif
 
 	return err;
 }
