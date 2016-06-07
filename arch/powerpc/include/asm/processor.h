@@ -147,7 +147,7 @@ typedef struct {
 } mm_segment_t;
 
 #define TS_FPR(i) fp_state.fpr[i][TS_FPROFFSET]
-#define TS_TRANS_FPR(i) transact_fp.fpr[i][TS_FPROFFSET]
+#define TS_CKFPR(i) ckfp_state.fpr[i][TS_FPROFFSET]
 
 /* FP and VSX 0-31 register set */
 struct thread_fp_state {
@@ -266,21 +266,9 @@ struct thread_struct {
 	unsigned long	tm_ppr;
 	unsigned long	tm_dscr;
 
-	/*
-	 * Transactional FP and VSX 0-31 register set.
-	 * NOTE: the sense of these is the opposite of the integer ckpt_regs!
-	 *
-	 * When a transaction is active/signalled/scheduled etc., *regs is the
-	 * most recent set of/speculated GPRs with ckpt_regs being the older
-	 * checkpointed regs to which we roll back if transaction aborts.
-	 *
-	 * However, fpr[] is the checkpointed 'base state' of FP regs, and
-	 * transact_fpr[] is the new set of transactional values.
-	 * VRs work the same way.
-	 */
-	struct thread_fp_state transact_fp;
-	struct thread_vr_state transact_vr;
-	unsigned long	transact_vrsave;
+	struct thread_fp_state ckfp_state; /* Checkpointed FP state */
+	struct thread_vr_state ckvr_state; /* Checkpointed VR state */
+	unsigned long	ckvrsave; /* Checkpointed VRSAVE */
 #endif /* CONFIG_PPC_TRANSACTIONAL_MEM */
 #ifdef CONFIG_KVM_BOOK3S_32_HANDLER
 	void*		kvm_shadow_vcpu; /* KVM internal data */
