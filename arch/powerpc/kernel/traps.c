@@ -1364,6 +1364,13 @@ void vsx_unavailable_exception(struct pt_regs *regs)
 	die("Unrecoverable VSX Unavailable Exception", regs, SIGABRT);
 }
 
+static void tm_unavailable(struct pt_regs *regs)
+{
+	pr_emerg("Unrecoverable TM Unavailable Exception "
+			"%lx at %lx\n", regs->trap, regs->nip);
+	die("Unrecoverable TM Unavailable Exception", regs, SIGABRT);
+}
+
 #ifdef CONFIG_PPC64
 void facility_unavailable_exception(struct pt_regs *regs)
 {
@@ -1434,6 +1441,23 @@ void facility_unavailable_exception(struct pt_regs *regs)
 		return;
 	}
 
+	/*
+	 * TM Unavailable
+	 *
+	 * If
+	 *  - firmware bits say don't do TM or
+	 *  - CONFIG_PPC_TRANSACTIONAL_MEM was not set and
+	 *  - hardware is actually TM aware
+	 * Then userspace can spam the console (even with the use of
+	 * _ratelimited), just send the SIGILL.
+	 */
+	if (status == FSCR_TM_LG) {
+		if (!cpu_has_feature(CPU_FTR_TM))
+			goto out;
+		tm_unavailable(regs);
+		return;
+	}
+
 	if ((status < ARRAY_SIZE(facility_strings)) &&
 	    facility_strings[status])
 		facility = facility_strings[status];
@@ -1446,6 +1470,7 @@ void facility_unavailable_exception(struct pt_regs *regs)
 		"%sFacility '%s' unavailable, exception at 0x%lx, MSR=%lx\n",
 		hv ? "Hypervisor " : "", facility, regs->nip, regs->msr);
 
+out:
 	if (user_mode(regs)) {
 		_exception(SIGILL, regs, ILL_ILLOPC, regs->nip);
 		return;
