@@ -31,4 +31,8 @@ static inline bool have_htm_nosc(void)
 #endif
 }
 
+long tm_signal_self_context_load(pid_t pid,
+		long *gps, double *fps, vector int *vms,
+		vector int *vss);
+
 #endif /* _SELFTESTS_POWERPC_TM_TM_H */
