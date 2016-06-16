@@ -4,6 +4,10 @@
 #include <ppc-asm.h>
 #include <asm/unistd.h>
 
+#define TBEGIN .long 0x7C00051D
+#define TSUSPEND .long 0x7C0005DD
+#define TRESUME .long 0x7C2005DD
+
 #define LOAD_REG_IMMEDIATE(reg,expr) \
 	lis	reg,(expr)@highest;	\
 	ori	reg,reg,(expr)@higher;	\
