@@ -870,6 +870,9 @@ void tm_recheckpoint(struct thread_struct *thread,
 {
 	unsigned long flags;
 
+	if (!(thread->regs->msr & MSR_TM))
+		return;
+
 	/* We really can't be interrupted here as the TEXASR registers can't
 	 * change and later in the trecheckpoint code, we have a userspace R1.
 	 * So let's hard disable over this region.
@@ -905,6 +908,9 @@ static inline void tm_recheckpoint_new_task(struct task_struct *new)
 	if (!new->thread.regs)
 		return;
 
+	if (!(new->thread.regs->msr & MSR_TM))
+		return;
+
 	if (!MSR_TM_ACTIVE(new->thread.regs->msr)){
 		tm_restore_sprs(&new->thread);
 		return;
@@ -925,11 +931,18 @@ static inline void tm_recheckpoint_new_task(struct task_struct *new)
 		 new->pid, mfmsr());
 }
 
-static inline void __switch_to_tm(struct task_struct *prev)
+static inline void __switch_to_tm(struct task_struct *prev, struct task_struct *new)
 {
 	if (cpu_has_feature(CPU_FTR_TM)) {
-		tm_enable();
-		tm_reclaim_task(prev);
+		if (prev->thread.regs && (prev->thread.regs->msr & MSR_TM)) {
+			prev->thread.load_tm++;
+			tm_enable();
+			tm_reclaim_task(prev);
+			if (!MSR_TM_ACTIVE(prev->thread.regs->msr) && prev->thread.load_tm == 0)
+				prev->thread.regs->msr |= ~MSR_TM;
+		} else if (new && new->thread.regs && (new->thread.regs->msr & MSR_TM)) {
+			tm_enable();
+		}
 	}
 }
 
@@ -965,7 +978,7 @@ void restore_tm_state(struct pt_regs *regs)
 
 #else
 #define tm_recheckpoint_new_task(new)
-#define __switch_to_tm(prev)
+#define __switch_to_tm(prev, new)
 #endif /* CONFIG_PPC_TRANSACTIONAL_MEM */
 
 static inline void save_sprs(struct thread_struct *t)
@@ -1095,7 +1108,7 @@ struct task_struct *__switch_to(struct task_struct *prev,
 	/* Save FPU, Altivec, VSX and SPE state */
 	giveup_all(prev);
 
-	__switch_to_tm(prev);
+	__switch_to_tm(prev, new);
 
 	/*
 	 * We can't take a PMU exception inside _switch() since there is a
@@ -1340,8 +1353,11 @@ int arch_dup_task_struct(struct task_struct *dst, struct task_struct *src)
 	 * transitions the CPU out of TM mode.  Hence we need to call
 	 * tm_recheckpoint_new_task() (on the same task) to restore the
 	 * checkpointed state back and the TM mode.
+	 *
+	 * Can't pass dst because it isn't ready. Doesn't matter, passing
+	 * dst is only important for __switch_to()
 	 */
-	__switch_to_tm(src);
+	__switch_to_tm(src, NULL);
 	tm_recheckpoint_new_task(src);
 
 	*dst = *src;
@@ -1574,8 +1590,6 @@ void start_thread(struct pt_regs *regs, unsigned long start, unsigned long sp)
 	current->thread.used_spe = 0;
 #endif /* CONFIG_SPE */
 #ifdef CONFIG_PPC_TRANSACTIONAL_MEM
-	if (cpu_has_feature(CPU_FTR_TM))
-		regs->msr |= MSR_TM;
 	current->thread.tm_tfhar = 0;
 	current->thread.tm_texasr = 0;
 	current->thread.tm_tfiar = 0;
