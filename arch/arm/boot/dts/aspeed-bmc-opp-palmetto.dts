@@ -17,7 +17,30 @@
 	};
 
 	memory {
-		reg = <0x40000000 0x10000000>;
+		reg = <0x40000000 0x20000000>;
+	};
+
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells= <1>;
+		ranges;
+
+		flash_mem: region@44000000 {
+			compatible = "aspeed,lpc-ctrl";
+			no-map;
+			reg = <0x54000000 0x04000000>; /* 64m */
+		};
+
+		fb_mem: framebuffer@4f000000 {
+			no-map;
+			reg = <0x5f000000 0x01000000>; /* 16m */
+		};
+	};
+
+	flash_buffer {
+		compatible = "aspeed,lpc-ctrl";
+		memory-region = <&flash_mem>;
+		reg = <0x1e789000 8>;
 	};
 
         leds {
