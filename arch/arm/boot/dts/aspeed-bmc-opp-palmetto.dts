@@ -25,13 +25,13 @@
 		#size-cells= <1>;
 		ranges;
 
-		flash_mem: region@44000000 {
+		flash_mem: region@52000000 {
 			compatible = "aspeed,lpc-ctrl";
 			no-map;
 			reg = <0x54000000 0x04000000>; /* 64m */
 		};
 
-		fb_mem: framebuffer@4f000000 {
+		fb_mem: framebuffer@5f000000 {
 			no-map;
 			reg = <0x5f000000 0x01000000>; /* 16m */
 		};
