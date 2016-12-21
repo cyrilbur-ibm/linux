@@ -60,6 +60,12 @@
 					memory-region = <&flash_memory>;
 					reg = <0x0 0x80>;
 				};
+
+				mbox: mbox@200 {
+					compatible = "aspeed,ast2400-mbox";
+					reg = <0x200 0x5c>;
+					interrupts = <46>;
+				};
 			};
 		};
 
@@ -898,12 +904,6 @@
 				compatible = "aspeed,ast2400-ibt-bmc";
 				reg = <0x1e789140 0x18>;
 				interrupts = <8>;
-			};
-
-			mbox: mbox@1e789200 {
-				compatible = "aspeed,ast2400-mbox";
-				reg = <0x1e789200 0x5c>;
-				interrupts = <46>;
 			};
 
 			wdt1: wdt@1e785000 {
