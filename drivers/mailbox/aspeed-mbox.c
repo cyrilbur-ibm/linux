@@ -27,7 +27,7 @@
 #include <linux/jiffies.h>
 #include <linux/mfd/syscon.h>
 #include <linux/regmap.h>
-#include <linux/mbox-host.h>
+#include <linux/aspeed-mbox.h>
 
 #define DEVICE_NAME	"aspeed-mbox"
 
