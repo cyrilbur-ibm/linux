@@ -230,9 +230,14 @@ void enable_kernel_fp(void)
 }
 EXPORT_SYMBOL(enable_kernel_fp);
 
+static int is_transactionally_fp(struct task_struct *tsk)
+{
+	return msr_tm_active(tsk->thread.regs->msr) && (tsk->thread.ckpt_regs.msr & MSR_FP);
+}
+
 static int restore_fp(struct task_struct *tsk)
 {
-	if (tsk->thread.load_fp || msr_tm_active(tsk->thread.regs->msr)) {
+	if (tsk->thread.load_fp || is_transactionally_fp(tsk)) {
 		load_fp_state(&current->thread.fp_state);
 		current->thread.load_fp++;
 		return 1;
@@ -311,10 +316,16 @@ void flush_altivec_to_thread(struct task_struct *tsk)
 }
 EXPORT_SYMBOL_GPL(flush_altivec_to_thread);
 
+static int is_transactionally_altivec(struct task_struct *tsk)
+{
+	return msr_tm_active(tsk->thread.regs->msr) && (tsk->thread.ckpt_regs.msr & MSR_VEC);
+}
+
+
 static int restore_altivec(struct task_struct *tsk)
 {
 	if (cpu_has_feature(CPU_FTR_ALTIVEC) &&
-		(tsk->thread.load_vec || msr_tm_active(tsk->thread.regs->msr))) {
+		(tsk->thread.load_vec || is_transactionally_altivec(tsk))) {
 		load_vr_state(&tsk->thread.vr_state);
 		tsk->thread.used_vr = 1;
 		tsk->thread.load_vec++;
